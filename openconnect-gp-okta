@@ -84,9 +84,9 @@ def main(gateway, openconnect_args, username, password):
         saml_resp_url, saml_resp_data = okta_saml(s, saml_req_url, username, password)
         saml_username, prelogin_cookie = complete_saml(s, saml_resp_url, saml_resp_data)
 
-        with subprocess.Popen(['openconnect', gateway, '--protocol=gp', '--user=' + saml_username,
-                '--usergroup=gateway:prelogin-cookie', '--passwd-on-stdin'] +
-                list(openconnect_args), stdin=subprocess.PIPE) as p:
-            p.communicate(input=prelogin_cookie.encode())
+    with subprocess.Popen(['openconnect', gateway, '--protocol=gp', '--user=' + saml_username,
+            '--usergroup=gateway:prelogin-cookie', '--passwd-on-stdin'] +
+            list(openconnect_args), stdin=subprocess.PIPE) as p:
+        p.communicate(input=prelogin_cookie.encode())
 
 main()
