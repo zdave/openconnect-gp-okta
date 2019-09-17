@@ -20,10 +20,16 @@ def extract_form(html):
 
 def prelogin(s, gateway):
     r = check(s.post('https://{}/ssl-vpn/prelogin.esp'.format(gateway)))
-    saml_req_html = base64.b64decode(lxml.etree.fromstring(r.content).find('saml-request').text)
-    saml_req_url, saml_req_data = extract_form(saml_req_html)
-    assert 'SAMLRequest' in saml_req_data
-    return saml_req_url + '?' + urllib.parse.urlencode(saml_req_data)
+    xml = lxml.etree.fromstring(r.content)
+    sam = xml.find('saml-auth-method').text
+    sr = base64.b64decode(xml.find('saml-request').text)
+    if sam == 'POST':
+        saml_req_url, saml_req_data = extract_form(sr)
+    elif sam == 'REDIRECT':
+        saml_req_url = sr, None
+    else:
+        assert False
+    return saml_req_url, saml_req_data
 
 def post_json(s, url, data):
     r = check(s.post(url, data=json.dumps(data),
@@ -50,11 +56,11 @@ def okta_auth(s, domain, username, password):
     assert r['status'] == 'SUCCESS'
     return r['sessionToken']
 
-def okta_saml(s, saml_req_url, username, password):
+def okta_saml(s, saml_req_url, saml_req_data, username, password):
     domain = urllib.parse.urlparse(saml_req_url).netloc
 
     # Just to set DT cookie
-    check(s.get(saml_req_url))
+    check(s.request(('POST' if saml_req_data else 'GET'), saml_req_url, data=saml_req_data))
 
     token = okta_auth(s, domain, username, password)
 
@@ -80,8 +86,8 @@ def main(gateway, openconnect_args, username, password):
         password = getpass.getpass()
 
     with requests.Session() as s:
-        saml_req_url = prelogin(s, gateway)
-        saml_resp_url, saml_resp_data = okta_saml(s, saml_req_url, username, password)
+        saml_req_url, saml_req_data = prelogin(s, gateway)
+        saml_resp_url, saml_resp_data = okta_saml(s, saml_req_url, saml_req_data, username, password)
         saml_username, prelogin_cookie = complete_saml(s, saml_resp_url, saml_resp_data)
 
     with subprocess.Popen(['openconnect', gateway, '--protocol=gp', '--user=' + saml_username,
