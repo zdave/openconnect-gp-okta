@@ -45,10 +45,16 @@ def okta_auth(s, domain, username, password):
             if factor['factorType'] == 'push':
                 url = factor['_links']['verify']['href']
                 while True:
-                    r = post_json(s, url, {'stateToken': r['stateToken']})
+                    r = post_json(s, url, {'factorId': factor['id'], 'stateToken': r['stateToken']})
                     if r['status'] != 'MFA_CHALLENGE':
                         break
                     assert r['factorResult'] == 'WAITING'
+                break
+            if factor['factorType'] == 'sms':
+                url = factor['_links']['verify']['href']
+                r = post_json(s, url, {'factorId': factor['id'], 'stateToken': r['stateToken']})
+                code = input('SMS code? ')
+                r = post_json(s, url, {'factorId': factor['id'], 'stateToken': r['stateToken'], 'passCode': code})
                 break
         else:
             assert False
