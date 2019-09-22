@@ -35,7 +35,9 @@ def okta_auth(s, domain, username, password):
         {'username': username, 'password': password})
 
     if r['status'] == 'MFA_REQUIRED':
-        for factor in r['_embedded']['factors']:
+        def priority(factor):
+            return {'push': 0}.get(factor['factorType'], 1)
+        for factor in sorted(r['_embedded']['factors'], key=priority):
             if factor['factorType'] == 'push':
                 url = factor['_links']['verify']['href']
                 while True:
