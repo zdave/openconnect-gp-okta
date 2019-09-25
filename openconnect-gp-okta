@@ -26,7 +26,7 @@ def prelogin(s, gateway):
     if sam == 'POST':
         saml_req_url, saml_req_data = extract_form(sr)
     elif sam == 'REDIRECT':
-        saml_req_url = sr, None
+        saml_req_url, saml_req_data = sr, None
     else:
         assert False
     return saml_req_url, saml_req_data
