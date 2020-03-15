@@ -53,6 +53,13 @@ def okta_auth(s, domain, username, password):
                 code = input('SMS code? ')
                 r = post_json(s, url, {'stateToken': r['stateToken'], 'passCode': code})
                 break
+            if factor['factorType'] == 'token:software:totp':
+                url = factor['_links']['verify']['href']
+                r = post_json(s, url, {'stateToken': r['stateToken']})
+                assert r['status'] == 'MFA_CHALLENGE'
+                code = input('Code for {} ({}): '.format(factor['provider'], factor['vendorName']) )
+                r = post_json(s, url, {'stateToken': r['stateToken'], 'passCode': code})
+                break
         else:
             assert False
 
