@@ -8,6 +8,7 @@ import lxml.etree
 import requests
 import subprocess
 import urllib
+import pyotp
 
 def check(r):
     r.raise_for_status()
@@ -30,7 +31,7 @@ def post_json(s, url, data):
         headers={'Content-Type': 'application/json'}))
     return r.json()
 
-def okta_auth(s, domain, username, password):
+def okta_auth(s, domain, username, password, totpkey):
     r = post_json(s, 'https://{}/api/v1/authn'.format(domain),
         {'username': username, 'password': password})
 
@@ -57,7 +58,10 @@ def okta_auth(s, domain, username, password):
                 url = factor['_links']['verify']['href']
                 r = post_json(s, url, {'stateToken': r['stateToken']})
                 assert r['status'] == 'MFA_CHALLENGE'
-                code = input('Code for {} ({}): '.format(factor['provider'], factor['vendorName']) )
+                if totpkey is not None:
+                    code = pyotp.TOTP(totpkey).now()
+                else: 
+                    code = input('Code for {} ({}): '.format(factor['provider'], factor['vendorName']) )
                 r = post_json(s, url, {'stateToken': r['stateToken'], 'passCode': code})
                 break
         else:
@@ -66,13 +70,13 @@ def okta_auth(s, domain, username, password):
     assert r['status'] == 'SUCCESS'
     return r['sessionToken']
 
-def okta_saml(s, saml_req_url, username, password):
+def okta_saml(s, saml_req_url, username, password, totpkey=None):
     domain = urllib.parse.urlparse(saml_req_url).netloc
 
     # Just to set DT cookie
     check(s.get(saml_req_url))
 
-    token = okta_auth(s, domain, username, password)
+    token = okta_auth(s, domain, username, password, totpkey)
 
     r = check(s.get('https://{}/login/sessionCookieRedirect'.format(domain),
         params={'token': token, 'redirectUrl': saml_req_url}))
@@ -89,7 +93,9 @@ def complete_saml(s, saml_resp_url, saml_resp_data):
 @click.argument('openconnect-args', nargs=-1)
 @click.option('--username')
 @click.option('--password')
-def main(gateway, openconnect_args, username, password):
+@click.option('--totpkey')
+
+def main(gateway, openconnect_args, username, password, totpkey=None):
     if username is None:
         username = input('Username: ')
     if password is None:
@@ -97,7 +103,7 @@ def main(gateway, openconnect_args, username, password):
 
     with requests.Session() as s:
         saml_req_url = prelogin(s, gateway)
-        saml_resp_url, saml_resp_data = okta_saml(s, saml_req_url, username, password)
+        saml_resp_url, saml_resp_data = okta_saml(s, saml_req_url, username, password, totpkey)
         saml_username, prelogin_cookie = complete_saml(s, saml_resp_url, saml_resp_data)
 
     with subprocess.Popen(['openconnect', gateway, '--protocol=gp', '--user=' + saml_username,
