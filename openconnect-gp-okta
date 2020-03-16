@@ -62,7 +62,6 @@ def okta_auth(s, domain, username, password, totpkey):
                     code = pyotp.TOTP(totpkey).now()
                 else: 
                     code = input('Code for {} ({}): '.format(factor['provider'], factor['vendorName']) )
-                code = input('Code for {} ({}): '.format(factor['provider'], factor['vendorName']) )
                 r = post_json(s, url, {'stateToken': r['stateToken'], 'passCode': code})
                 break
         else:
