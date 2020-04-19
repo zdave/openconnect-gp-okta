@@ -7,7 +7,13 @@ import json
 import lxml.etree
 import requests
 import subprocess
+import sys
 import urllib
+
+try:
+    import pyotp
+except ImportError:
+    pyotp = None
 
 def check(r):
     r.raise_for_status()
@@ -30,13 +36,15 @@ def post_json(s, url, data):
         headers={'Content-Type': 'application/json'}))
     return r.json()
 
-def okta_auth(s, domain, username, password):
+def okta_auth(s, domain, username, password, totp_key):
     r = post_json(s, 'https://{}/api/v1/authn'.format(domain),
         {'username': username, 'password': password})
 
     if r['status'] == 'MFA_REQUIRED':
         def priority(factor):
-            return {'push': 0}.get(factor['factorType'], 1)
+            return {
+                'token:software:totp': 2 if totp_key is None else 0,
+                'push': 1}.get(factor['factorType'], 2)
         for factor in sorted(r['_embedded']['factors'], key=priority):
             if factor['factorType'] == 'push':
                 url = factor['_links']['verify']['href']
@@ -50,14 +58,17 @@ def okta_auth(s, domain, username, password):
                 url = factor['_links']['verify']['href']
                 r = post_json(s, url, {'stateToken': r['stateToken']})
                 assert r['status'] == 'MFA_CHALLENGE'
-                code = input('SMS code? ')
+                code = input('SMS code: ')
                 r = post_json(s, url, {'stateToken': r['stateToken'], 'passCode': code})
                 break
             if factor['factorType'] == 'token:software:totp':
                 url = factor['_links']['verify']['href']
                 r = post_json(s, url, {'stateToken': r['stateToken']})
                 assert r['status'] == 'MFA_CHALLENGE'
-                code = input('Code for {} ({}): '.format(factor['provider'], factor['vendorName']) )
+                if totp_key is None:
+                    code = input('One-time code for {} ({}): '.format(factor['provider'], factor['vendorName']))
+                else:
+                    code = pyotp.TOTP(totp_key).now()
                 r = post_json(s, url, {'stateToken': r['stateToken'], 'passCode': code})
                 break
         else:
@@ -66,13 +77,13 @@ def okta_auth(s, domain, username, password):
     assert r['status'] == 'SUCCESS'
     return r['sessionToken']
 
-def okta_saml(s, saml_req_url, username, password):
+def okta_saml(s, saml_req_url, username, password, totp_key):
     domain = urllib.parse.urlparse(saml_req_url).netloc
 
     # Just to set DT cookie
     check(s.get(saml_req_url))
 
-    token = okta_auth(s, domain, username, password)
+    token = okta_auth(s, domain, username, password, totp_key)
 
     r = check(s.get('https://{}/login/sessionCookieRedirect'.format(domain),
         params={'token': token, 'redirectUrl': saml_req_url}))
@@ -89,7 +100,12 @@ def complete_saml(s, saml_resp_url, saml_resp_data):
 @click.argument('openconnect-args', nargs=-1)
 @click.option('--username')
 @click.option('--password')
-def main(gateway, openconnect_args, username, password):
+@click.option('--totp-key')
+def main(gateway, openconnect_args, username, password, totp_key):
+    if (totp_key is not None) and (pyotp is None):
+        print('--totp-key requires pyotp!', file=sys.stderr)
+        sys.exit(1)
+
     if username is None:
         username = input('Username: ')
     if password is None:
@@ -97,7 +113,7 @@ def main(gateway, openconnect_args, username, password):
 
     with requests.Session() as s:
         saml_req_url = prelogin(s, gateway)
-        saml_resp_url, saml_resp_data = okta_saml(s, saml_req_url, username, password)
+        saml_resp_url, saml_resp_data = okta_saml(s, saml_req_url, username, password, totp_key)
         saml_username, prelogin_cookie = complete_saml(s, saml_resp_url, saml_resp_data)
 
     with subprocess.Popen(['openconnect', gateway, '--protocol=gp', '--user=' + saml_username,
