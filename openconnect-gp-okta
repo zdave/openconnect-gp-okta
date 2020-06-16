@@ -101,7 +101,8 @@ def complete_saml(s, saml_resp_url, saml_resp_data):
 @click.option('--username')
 @click.option('--password')
 @click.option('--totp-key')
-def main(gateway, openconnect_args, username, password, totp_key):
+@click.option('--sudo/--no-sudo', default=False)
+def main(gateway, openconnect_args, username, password, totp_key, sudo):
     if (totp_key is not None) and (pyotp is None):
         print('--totp-key requires pyotp!', file=sys.stderr)
         sys.exit(1)
@@ -124,6 +125,9 @@ def main(gateway, openconnect_args, username, password, totp_key):
         '--usergroup=gateway:prelogin-cookie',
         '--passwd-on-stdin'
     ] + list(openconnect_args)
+
+    if sudo:
+        subprocess_args = ['sudo'] + subprocess_args
 
     with subprocess.Popen(subprocess_args, stdin=subprocess.PIPE) as p:
         p.communicate(input=prelogin_cookie.encode())
