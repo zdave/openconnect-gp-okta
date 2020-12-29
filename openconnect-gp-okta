@@ -5,6 +5,7 @@ import click
 import getpass
 import json
 import lxml.etree
+import re
 import requests
 import subprocess
 import sys
@@ -61,18 +62,18 @@ def okta_auth(s, domain, username, password, totp_key):
                 code = input('SMS code: ')
                 r = post_json(s, url, {'stateToken': r['stateToken'], 'passCode': code})
                 break
-            if factor['factorType'] == 'token:software:totp':
+            if re.match('token(?::|$)', factor['factorType']):
                 url = factor['_links']['verify']['href']
                 r = post_json(s, url, {'stateToken': r['stateToken']})
                 assert r['status'] == 'MFA_CHALLENGE'
-                if totp_key is None:
-                    code = input('One-time code for {} ({}): '.format(factor['provider'], factor['vendorName']))
-                else:
+                if (factor['factorType'] == 'token:software:totp') and (totp_key is not None):
                     code = pyotp.TOTP(totp_key).now()
+                else:
+                    code = input('One-time code for {} ({}): '.format(factor['provider'], factor['vendorName']))
                 r = post_json(s, url, {'stateToken': r['stateToken'], 'passCode': code})
                 break
         else:
-            assert False
+            raise Exception('No supported authentication factors')
 
     assert r['status'] == 'SUCCESS'
     return r['sessionToken']
