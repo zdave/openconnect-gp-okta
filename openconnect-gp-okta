@@ -134,5 +134,6 @@ def main(gateway, openconnect_args, username, password, totp_key, sudo):
     with subprocess.Popen(subprocess_args, stdin=subprocess.PIPE) as p:
         signal.signal(signal.SIGTERM, lambda *args: p.terminate())
         p.communicate(input=prelogin_cookie.encode())
+    sys.exit(p.returncode)
 
 main()
