@@ -131,8 +131,15 @@ def main(gateway, openconnect_args, username, password, totp_key, sudo):
     if sudo:
         subprocess_args = ['sudo'] + subprocess_args
 
+    term = False
+    def set_term(*args):
+        nonlocal term
+        term = True
+    signal.signal(signal.SIGTERM, set_term)
     with subprocess.Popen(subprocess_args, stdin=subprocess.PIPE) as p:
         signal.signal(signal.SIGTERM, lambda *args: p.terminate())
+        if term:
+            p.terminate()
         p.communicate(input=prelogin_cookie.encode())
     sys.exit(p.returncode)
 
