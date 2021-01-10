@@ -7,6 +7,7 @@ import json
 import lxml.etree
 import re
 import requests
+import signal
 import subprocess
 import sys
 import urllib
@@ -131,6 +132,7 @@ def main(gateway, openconnect_args, username, password, totp_key, sudo):
         subprocess_args = ['sudo'] + subprocess_args
 
     with subprocess.Popen(subprocess_args, stdin=subprocess.PIPE) as p:
+        signal.signal(signal.SIGTERM, lambda *args: p.terminate())
         p.communicate(input=prelogin_cookie.encode())
 
 main()
