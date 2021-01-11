@@ -2,9 +2,11 @@
 
 import base64
 import click
+import contextlib
 import getpass
 import json
 import lxml.etree
+import os
 import re
 import requests
 import signal
@@ -97,6 +99,34 @@ def complete_saml(s, saml_resp_url, saml_resp_data):
     r = check(s.post(saml_resp_url, data=saml_resp_data))
     return r.headers['saml-username'], r.headers['prelogin-cookie']
 
+@contextlib.contextmanager
+def signal_mask(how, mask):
+    old_mask = signal.pthread_sigmask(how, mask)
+    try:
+        yield old_mask
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, old_mask)
+
+@contextlib.contextmanager
+def signal_handler(num, handler):
+    old_handler = signal.signal(num, handler)
+    try:
+        yield old_handler
+    finally:
+        signal.signal(num, old_handler)
+
+@contextlib.contextmanager
+def popen_forward_sigterm(args, *, stdin=None):
+    with signal_mask(signal.SIG_BLOCK, {signal.SIGTERM}) as old_mask:
+        with subprocess.Popen(args, stdin=stdin,
+                preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, old_mask)) as p:
+            with signal_handler(signal.SIGTERM, lambda *args: p.terminate()):
+                with signal_mask(signal.SIG_SETMASK, old_mask):
+                    yield p
+                    if p.stdin:
+                        p.stdin.close()
+                    os.waitid(os.P_PID, p.pid, os.WEXITED | os.WNOWAIT)
+
 @click.command()
 @click.argument('gateway')
 @click.argument('openconnect-args', nargs=-1)
@@ -131,16 +161,8 @@ def main(gateway, openconnect_args, username, password, totp_key, sudo):
     if sudo:
         subprocess_args = ['sudo'] + subprocess_args
 
-    term = False
-    def set_term(*args):
-        nonlocal term
-        term = True
-    signal.signal(signal.SIGTERM, set_term)
-    with subprocess.Popen(subprocess_args, stdin=subprocess.PIPE) as p:
-        signal.signal(signal.SIGTERM, lambda *args: p.terminate())
-        if term:
-            p.terminate()
-        p.communicate(input=prelogin_cookie.encode())
+    with popen_forward_sigterm(subprocess_args, stdin=subprocess.PIPE) as p:
+        p.stdin.write(prelogin_cookie.encode())
     sys.exit(p.returncode)
 
 main()
