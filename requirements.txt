@@ -4,4 +4,4 @@ click==7.1.2
 idna==2.10
 lxml==4.6.2
 requests==2.25.0
-urllib3==1.26.2
+urllib3==1.26.4
