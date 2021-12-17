@@ -10,7 +10,7 @@ import signal
 import subprocess
 import sys
 import urllib.parse
-from typing import Any, Optional
+from typing import Any, Callable, ContextManager, Optional, Tuple
 
 import click
 import lxml.etree
@@ -22,12 +22,12 @@ except ImportError:
     pyotp = None
 
 
-def check(r: requests.Response):
+def check(r: requests.Response) -> requests.Response:
     r.raise_for_status()
     return r
 
 
-def extract_form(html: bytes):
+def extract_form(html: bytes) -> Tuple[str, dict[str, str]]:
     form = lxml.etree.fromstring(html, lxml.etree.HTMLParser()).find('.//form')
     return (
         form.attrib['action'],
@@ -35,17 +35,17 @@ def extract_form(html: bytes):
     )
 
 
-def prelogin(s: requests.Session, gateway: str):
-    r = check(s.post('https://{}/ssl-vpn/prelogin.esp'.format(gateway)))
+def prelogin(s: requests.Session, gateway: str) -> str:
+    r = check(s.post(f'https://{gateway}/ssl-vpn/prelogin.esp'))
     saml_req_html = base64.b64decode(
         lxml.etree.fromstring(r.content).find('saml-request').text
     )
     saml_req_url, saml_req_data = extract_form(saml_req_html)
     assert 'SAMLRequest' in saml_req_data
-    return saml_req_url + '?' + urllib.parse.urlencode(saml_req_data)
+    return f'{saml_req_url}?{urllib.parse.urlencode(saml_req_data)}'
 
 
-def post_json(s: requests.Session, url: str, data: Any):
+def post_json(s: requests.Session, url: str, data: Any) -> Any:
     r = check(
         s.post(url, data=json.dumps(data), headers={'Content-Type': 'application/json'})
     )
@@ -58,10 +58,10 @@ def okta_auth(
     username: str,
     password: str,
     totp_key: Optional[str],
-):
+) -> str:
     r = post_json(
         s,
-        'https://{}/api/v1/authn'.format(domain),
+        f'https://{domain}/api/v1/authn',
         {'username': username, 'password': password},
     )
 
@@ -98,9 +98,7 @@ def okta_auth(
                     code = pyotp.TOTP(totp_key).now()
                 else:
                     code = input(
-                        'One-time code for {} ({}): '.format(
-                            factor['provider'], factor['vendorName']
-                        )
+                        f'One-time code for {factor["provider"]} ({factor["vendorName"]}): '
                     )
                 r = post_json(s, url, {'stateToken': r['stateToken'], 'passCode': code})
                 break
@@ -117,7 +115,7 @@ def okta_saml(
     username: str,
     password: str,
     totp_key: Optional[str],
-):
+) -> Tuple[str, dict[str, str]]:
     domain = urllib.parse.urlparse(saml_req_url).netloc
 
     # Just to set DT cookie
@@ -127,7 +125,7 @@ def okta_saml(
 
     r = check(
         s.get(
-            'https://{}/login/sessionCookieRedirect'.format(domain),
+            f'https://{domain}/login/sessionCookieRedirect',
             params={'token': token, 'redirectUrl': saml_req_url},
         )
     )
@@ -138,13 +136,13 @@ def okta_saml(
 
 def complete_saml(
     s: requests.Session, saml_resp_url: str, saml_resp_data: dict[str, str]
-):
+) -> Tuple[str, str]:
     r = check(s.post(saml_resp_url, data=saml_resp_data))
     return r.headers['saml-username'], r.headers['prelogin-cookie']
 
 
 @contextlib.contextmanager
-def signal_mask(how: int, mask: set[signal.Signals]):
+def signal_mask(how: int, mask: set[signal.Signals]) -> set[signal.Signals]:
     old_mask = signal.pthread_sigmask(how, mask)
     try:
         yield old_mask
@@ -153,7 +151,7 @@ def signal_mask(how: int, mask: set[signal.Signals]):
 
 
 @contextlib.contextmanager
-def signal_handler(num: signal.Signals, handler: callable):
+def signal_handler(num: signal.Signals, handler: Callable) -> ContextManager[Callable]:
     old_handler = signal.signal(num, handler)
     try:
         yield old_handler
@@ -162,7 +160,9 @@ def signal_handler(num: signal.Signals, handler: callable):
 
 
 @contextlib.contextmanager
-def popen_forward_sigterm(args: list[str], *, stdin=None):
+def popen_forward_sigterm(
+    args: list[str], *, stdin=None
+) -> ContextManager[subprocess.Popen]:
     with signal_mask(signal.SIG_BLOCK, {signal.SIGTERM}) as old_mask:
         with subprocess.Popen(
             args,
@@ -191,7 +191,7 @@ def main(
     password: Optional[str],
     totp_key: Optional[str],
     sudo: bool,
-):
+) -> None:
     if (totp_key is not None) and (pyotp is None):
         print('--totp-key requires pyotp!', file=sys.stderr)
         sys.exit(1)
@@ -212,13 +212,14 @@ def main(
         'openconnect',
         gateway,
         '--protocol=gp',
-        '--user=' + saml_username,
+        f'--user={saml_username}',
         '--usergroup=gateway:prelogin-cookie',
         '--passwd-on-stdin',
-    ] + list(openconnect_args)
+        *openconnect_args,
+    ]
 
     if sudo:
-        subprocess_args = ['sudo'] + subprocess_args
+        subprocess_args = ['sudo', *subprocess_args]
 
     with popen_forward_sigterm(subprocess_args, stdin=subprocess.PIPE) as p:
         p.stdin.write(prelogin_cookie.encode())
