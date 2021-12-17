@@ -1,0 +1,27 @@
+[project]
+name = 'openconnect_gp_okta'
+authors = [{name = 'David Emett', email = 'dave@sp4m.net'}]
+classifiers = ['License :: OSI Approved :: MIT License']
+dynamic = ['version', 'description']
+dependencies = [
+    'certifi >=2020.12.5',
+    'chardet >=3.0.4, <4',
+    'click >=7.1.2',
+    'idna >=2.10, <3',
+    'lxml >=4.6.2, <5',
+    'requests >=2.25.0, <3',
+    'urllib3 >=1.26.2, <2',
+]
+
+[project.urls]
+Home = 'https://github.com/zdave/openconnect-gp-okta'
+
+[project.scripts]
+openconnect-gp-okta = 'openconnect_gp_okta:main'
+
+[tool.black]
+skip-string-normalization = true
+
+[build-system]
+requires = ['flit_core >=3.2,<4']
+build-backend = 'flit_core.buildapi'
