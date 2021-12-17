@@ -8,7 +8,7 @@ dependencies = [
     'chardet >=3.0.4, <4',
     'click >=7.1.2',
     'idna >=2.10, <3',
-    'lxml >=4.6.2, <5',
+    'lxml >=4.6.3, <5',
     'requests >=2.25.0, <3',
     'urllib3 >=1.26.2, <2',
 ]
