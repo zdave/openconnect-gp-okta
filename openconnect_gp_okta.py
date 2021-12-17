@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""OpenConnect wrapper which logs into a GlobalProtect gateway, authenticating with Okta."""
 
 import base64
 import contextlib
@@ -20,6 +21,9 @@ try:
     import pyotp
 except ImportError:
     pyotp = None
+
+
+__version__ = '1.0'
 
 
 def check(r: requests.Response) -> requests.Response:
