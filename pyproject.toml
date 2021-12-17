@@ -13,6 +13,9 @@ dependencies = [
     'urllib3 >=1.26.2, <2',
 ]
 
+[project.optional-dependencies]
+totp = ['pyotp']
+
 [project.urls]
 Home = 'https://github.com/zdave/openconnect-gp-okta'
 
