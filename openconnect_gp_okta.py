@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import urllib.parse
+from typing import Any, Optional
 
 import click
 import lxml.etree
@@ -26,7 +27,7 @@ def check(r: requests.Response):
     return r
 
 
-def extract_form(html: str):
+def extract_form(html: bytes):
     form = lxml.etree.fromstring(html, lxml.etree.HTMLParser()).find('.//form')
     return (
         form.attrib['action'],
@@ -44,7 +45,7 @@ def prelogin(s: requests.Session, gateway: str):
     return saml_req_url + '?' + urllib.parse.urlencode(saml_req_data)
 
 
-def post_json(s: requests.Session, url: str, data: object):
+def post_json(s: requests.Session, url: str, data: Any):
     r = check(
         s.post(url, data=json.dumps(data), headers={'Content-Type': 'application/json'})
     )
@@ -52,7 +53,11 @@ def post_json(s: requests.Session, url: str, data: object):
 
 
 def okta_auth(
-    s: requests.Session, domain: str, username: str, password: str, totp_key: str | None
+    s: requests.Session,
+    domain: str,
+    username: str,
+    password: str,
+    totp_key: Optional[str],
 ):
     r = post_json(
         s,
@@ -62,7 +67,7 @@ def okta_auth(
 
     if r['status'] == 'MFA_REQUIRED':
 
-        def priority(factor: dict[str, str]):
+        def priority(factor: dict[str, Any]):
             return {'token:software:totp': 2 if totp_key is None else 0, 'push': 1}.get(
                 factor['factorType'], 2
             )
@@ -111,7 +116,7 @@ def okta_saml(
     saml_req_url: str,
     username: str,
     password: str,
-    totp_key: str | None,
+    totp_key: Optional[str],
 ):
     domain = urllib.parse.urlparse(saml_req_url).netloc
 
@@ -132,7 +137,7 @@ def okta_saml(
 
 
 def complete_saml(
-    s: requests.Session, saml_resp_url: str, saml_resp_data: dict[str, object]
+    s: requests.Session, saml_resp_url: str, saml_resp_data: dict[str, str]
 ):
     r = check(s.post(saml_resp_url, data=saml_resp_data))
     return r.headers['saml-username'], r.headers['prelogin-cookie']
@@ -182,9 +187,9 @@ def popen_forward_sigterm(args: list[str], *, stdin=None):
 def main(
     gateway: str,
     openconnect_args: list[str],
-    username: str | None,
-    password: str | None,
-    totp_key: str | None,
+    username: Optional[str],
+    password: Optional[str],
+    totp_key: Optional[str],
     sudo: bool,
 ):
     if (totp_key is not None) and (pyotp is None):
