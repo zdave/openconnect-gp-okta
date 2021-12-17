@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 
 import base64
-import click
 import contextlib
 import getpass
 import json
-import lxml.etree
 import os
 import re
-import requests
 import signal
 import subprocess
 import sys
 import urllib.parse
+
+import click
+import lxml.etree
+import requests
 
 try:
     import pyotp
