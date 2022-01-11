@@ -13,6 +13,7 @@ import signal
 import subprocess
 import sys
 import urllib
+import uuid
 
 try:
     import pyotp
@@ -36,6 +37,8 @@ def prelogin(s, gateway):
     return saml_req_url + '?' + urllib.parse.urlencode(saml_req_data)
 
 def post_json(s, url, data):
+    # https://developer.okta.com/docs/reference/api/authn/#context-object
+    data = {**data, 'context': {'deviceToken': str(uuid.getnode())}}
     r = check(s.post(url, data=json.dumps(data),
         headers={'Content-Type': 'application/json'}))
     return r.json()
@@ -53,7 +56,7 @@ def okta_auth(s, domain, username, password, totp_key):
             if factor['factorType'] == 'push':
                 url = factor['_links']['verify']['href']
                 while True:
-                    r = post_json(s, url, {'stateToken': r['stateToken']})
+                    r = post_json(s, url, {'stateToken': r['stateToken'], 'rememberDevice': True})
                     if r['status'] != 'MFA_CHALLENGE':
                         break
                     assert r['factorResult'] == 'WAITING'
