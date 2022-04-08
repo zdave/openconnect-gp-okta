@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""OpenConnect wrapper which logs into a GlobalProtect gateway, authenticating with Okta."""
+"""
+OpenConnect wrapper which logs into a GlobalProtect gateway,
+authenticating with Okta.
+"""
 
 import base64
 import contextlib
@@ -11,6 +14,7 @@ import signal
 import subprocess
 import sys
 import urllib.parse
+import uuid
 from typing import Any, Callable, ContextManager, Optional, Tuple
 
 import click
@@ -51,6 +55,8 @@ def prelogin(s: requests.Session, gateway: str) -> str:
 
 
 def post_json(s: requests.Session, url: str, data: Any) -> Any:
+    # https://developer.okta.com/docs/reference/api/authn/#context-object
+    data = {**data, 'context': {'deviceToken': str(uuid.getnode())}}
     r = check(
         s.post(url, data=json.dumps(data), headers={'Content-Type': 'application/json'})
     )
@@ -79,9 +85,12 @@ def okta_auth(
 
         for factor in sorted(r['_embedded']['factors'], key=priority):
             if factor['factorType'] == 'push':
+                # https://developer.okta.com/docs/reference/api/authn/#verify-push-factor
                 url = factor['_links']['verify']['href']
                 while True:
-                    r = post_json(s, url, {'stateToken': r['stateToken']})
+                    r = post_json(
+                        s, url, {'stateToken': r['stateToken'], 'rememberDevice': True}
+                    )
                     if r['status'] != 'MFA_CHALLENGE':
                         break
                     assert r['factorResult'] == 'WAITING'
@@ -103,7 +112,8 @@ def okta_auth(
                     code = pyotp.TOTP(totp_key).now()
                 else:
                     code = input(
-                        f'One-time code for {factor["provider"]} ({factor["vendorName"]}): '
+                        f'One-time code for {factor["provider"]} '
+                        f'({factor["vendorName"]}): '
                     )
                 r = post_json(s, url, {'stateToken': r['stateToken'], 'passCode': code})
                 break
