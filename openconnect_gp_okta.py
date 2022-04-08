@@ -14,6 +14,7 @@ import urllib.parse
 from typing import Any, Callable, ContextManager, Optional, Tuple
 
 import click
+import keyring
 import lxml.etree
 import requests
 
@@ -203,7 +204,9 @@ def main(
     if username is None:
         username = input('Username: ')
     if password is None:
-        password = getpass.getpass()
+        password = keyring.get_password(gateway, username)
+        if password is None:
+            password = getpass.getpass()
 
     with requests.Session() as s:
         saml_req_url = prelogin(s, gateway)

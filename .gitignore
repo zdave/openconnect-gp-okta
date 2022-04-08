@@ -1,2 +1,9 @@
+# IDEs
 /.idea/
+/.venv/
+
+# Caches
 __pycache__/
+
+# Build files
+/dist/

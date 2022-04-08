@@ -1,6 +1,9 @@
 [project]
 name = 'openconnect_gp_okta'
-authors = [{name = 'David Emett', email = 'dave@sp4m.net'}]
+authors = [
+    { name = 'David Emett', email = 'dave@sp4m.net' },
+    { name = 'Philipp Angerer', email = 'flying-sheep@web.de' },
+]
 classifiers = ['License :: OSI Approved :: MIT License']
 dynamic = ['version', 'description']
 dependencies = [
@@ -11,6 +14,7 @@ dependencies = [
     'lxml >=4.6.3, <5',
     'requests >=2.25.0, <3',
     'urllib3 >=1.26.2, <2',
+    'keyring >=23.4.0',
 ]
 
 [project.optional-dependencies]
