@@ -67,8 +67,6 @@ def okta_auth(s, domain, username, password, totp_key):
                 break
             if re.match('token(?::|$)', factor['factorType']):
                 url = factor['_links']['verify']['href']
-                r = post_json(s, url, {'stateToken': r['stateToken']})
-                assert r['status'] == 'MFA_CHALLENGE'
                 if (factor['factorType'] == 'token:software:totp') and (totp_key is not None):
                     code = pyotp.TOTP(totp_key).now()
                 else:
