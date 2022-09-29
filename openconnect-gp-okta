@@ -18,6 +18,94 @@ try:
 except ImportError:
     pyotp = None
 
+HAS_FIDO2 = True
+try:
+    from fido2.client import Fido2Client, UserInteraction
+    from fido2.hid import list_devices
+    from fido2.utils import websafe_decode, websafe_encode
+except ImportError:
+    HAS_FIDO2 = False
+    UserInteraction = object
+
+
+class ConsoleInteraction(UserInteraction):
+    def prompt_up(self):
+        """Called when the authenticator is awaiting a user presence check."""
+        click.echo("Touch your hardware token to confirm user presence")
+
+    def request_pin(self, permissions, rp_id):
+        """Called when the client requires a PIN from the user.
+        Should return a PIN, or None/Empty to cancel."""
+        return click.prompt("Enter your hardware token pin", hide_input=True)
+
+    def request_uv(self, permissions, rp_id):
+        """Called when the client is about to request UV from the user.
+        Should return True if allowed, or False to cancel."""
+        click.echo("User Verification requested.")
+        return True
+
+class OktaWebauthn:
+    # Not using factor['_links']['verify']['href'] as multiple
+    # webauthn devices may exist and Okta has an alternative
+    # workflow which works with any webauthn device available by
+    # querying a generic URL.
+    WEBAUTHN_URL_TEMPLATE = 'https://{}/api/v1/authn/factors/webauthn/verify'
+
+    def __init__(self):
+        assert HAS_FIDO2
+        self._device = None
+
+    def get_device(self):
+        self._device = next(list_devices(), None)
+        while self._device is None:
+            click.echo("Please insert a suitable device if you wish to continue with webauthn MFA.")
+            if click.confirm("Continue with webauthn MFA?"):
+                self._device = next(list_devices(), None)
+            else:
+                click.echo("Falling back to other MFA method.")
+                break
+        return self._device is not None
+
+    def okta_verify(self, session, domain, stateToken):
+        url = self.WEBAUTHN_URL_TEMPLATE.format(domain)
+        r = post_json(session, url, {'stateToken': stateToken})
+        assert r['status'] == 'MFA_CHALLENGE'
+
+        fido_client = Fido2Client(
+            self._device,
+            "https://{}".format(domain),
+            user_interaction=ConsoleInteraction(),
+        )
+        pubkey_req = {
+            "challenge": websafe_decode(r['_embedded']['challenge']['challenge']),
+            "rpId": domain,
+            'allowCredentials': [
+                {
+                    'type': 'public-key',
+                    'id': websafe_decode(f['profile']['credentialId'])
+                } for f in r['_embedded']['factors']
+            ]
+        }
+
+        assertion = fido_client.get_assertion(pubkey_req).get_response(0)
+
+        def b64(obj):
+            # websafe_encode(obj) takes a python object and serializes it using
+            # methods defined by this given object so that (obj !=
+            # websafe_decode(websafe_encode(obj))). The latter is a bytestring
+            # that then needs to be correctly base64 encoded for Okta.
+            return base64.b64encode(websafe_decode(websafe_encode(obj))).decode('ascii')
+
+        next_url = r['_links']['next']['href']
+        payload = {
+            'authenticatorData': b64(assertion['authenticatorData']),
+            'clientData': b64(assertion['clientData']),
+            'signatureData': b64(assertion['signature']),
+            'stateToken': r["stateToken"]
+        }
+        return post_json(session, next_url, payload)
+
+
 def check(r):
     r.raise_for_status()
     return r
@@ -46,6 +134,8 @@ def okta_auth(s, domain, username, password, factor_priorities, totp_key):
     if r['status'] == 'MFA_REQUIRED':
         def priority(factor):
             return factor_priorities.get(factor['factorType'], 0)
+
+        ignore_webauthn = not HAS_FIDO2
         for factor in sorted(r['_embedded']['factors'], key=priority, reverse=True):
             if factor['factorType'] == 'push':
                 url = factor['_links']['verify']['href']
@@ -61,6 +151,14 @@ def okta_auth(s, domain, username, password, factor_priorities, totp_key):
                 assert r['status'] == 'MFA_CHALLENGE'
                 code = click.prompt('SMS code')
                 r = post_json(s, url, {'stateToken': r['stateToken'], 'passCode': code})
+                break
+            if factor['factorType'] == 'webauthn' and not ignore_webauthn:
+                webauthn = OktaWebauthn()
+                if webauthn.get_device():
+                    r = webauthn.okta_verify(s, domain, r['stateToken'])
+                else:
+                    ignore_webauthn = True
+                    continue
                 break
             if re.match('token(?::|$)', factor['factorType']):
                 url = factor['_links']['verify']['href']
