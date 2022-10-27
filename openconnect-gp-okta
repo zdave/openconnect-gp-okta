@@ -3,7 +3,6 @@
 import base64
 import click
 import contextlib
-import getpass
 import json
 import lxml.etree
 import os
@@ -60,7 +59,7 @@ def okta_auth(s, domain, username, password, factor_priorities, totp_key):
                 url = factor['_links']['verify']['href']
                 r = post_json(s, url, {'stateToken': r['stateToken']})
                 assert r['status'] == 'MFA_CHALLENGE'
-                code = input('SMS code: ')
+                code = click.prompt('SMS code')
                 r = post_json(s, url, {'stateToken': r['stateToken'], 'passCode': code})
                 break
             if re.match('token(?::|$)', factor['factorType']):
@@ -68,7 +67,7 @@ def okta_auth(s, domain, username, password, factor_priorities, totp_key):
                 if (factor['factorType'] == 'token:software:totp') and (totp_key is not None):
                     code = pyotp.TOTP(totp_key).now()
                 else:
-                    code = input('One-time code for {} ({}): '.format(factor['provider'], factor['vendorName']))
+                    code = click.prompt('One-time code for {} ({})'.format(factor['provider'], factor['vendorName']))
                 r = post_json(s, url, {'stateToken': r['stateToken'], 'passCode': code})
                 break
         else:
@@ -133,13 +132,13 @@ def popen_forward_sigterm(args, *, stdin=None):
 @click.option('--sudo/--no-sudo', default=False)
 def main(gateway, openconnect_args, username, password, factor_priorities, totp_key, sudo):
     if (totp_key is not None) and (pyotp is None):
-        print('--totp-key requires pyotp!', file=sys.stderr)
+        click.echo('--totp-key requires pyotp!', err=True)
         sys.exit(1)
 
     if username is None:
-        username = input('Username: ')
+        username = click.prompt('Username')
     if password is None:
-        password = getpass.getpass()
+        password = click.prompt('Password', hide_input=True)
 
     factor_priorities = {
         'token:software:totp': 0 if totp_key is None else 2,
